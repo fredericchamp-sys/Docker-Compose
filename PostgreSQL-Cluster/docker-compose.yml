@@ -1,0 +1,209 @@
+name: pg-ha-cluster
+
+services:
+  # =====================
+  # ETCD CLUSTER (simplified networking)
+  # =====================
+
+  etcd-poc01:
+    image: quay.io/coreos/etcd:v3.5.13
+    container_name: etcd-poc01
+    restart: unless-stopped
+    environment:
+      ETCD_NAME: etcd-poc01
+      ETCDCTL_API: 3
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-poc01:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-poc01:2380
+      ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+    ports:
+      - "2379:2379"
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etcd-poc02:
+    image: quay.io/coreos/etcd:v3.5.13
+    container_name: etcd-poc02
+    restart: unless-stopped
+    environment:
+      ETCD_NAME: etcd-poc02
+      ETCDCTL_API: 3
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-poc02:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-poc02:2380
+      ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  etcd-poc05:
+    image: quay.io/coreos/etcd:v3.5.13
+    container_name: etcd-poc05
+    restart: unless-stopped
+    volumes:
+      - poc05_etcd:/etcd-data
+    environment:
+      ETCD_NAME: etcd-poc05
+      ETCDCTL_API: 3
+      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
+      ETCD_ADVERTISE_CLIENT_URLS: http://etcd-poc05:2379
+      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
+      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-poc05:2380
+      ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
+      ETCD_INITIAL_CLUSTER_STATE: new
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =====================
+  # POSTGRES + PATRONI
+  # =====================
+
+  pg-primary:
+    build: ./docker/patroni
+    image: pg-patroni:16
+    container_name: pg-primary
+    restart: unless-stopped
+    volumes:
+      - poc01_data:/var/lib/postgresql/data
+    environment:
+      PATRONI_NAME: pg-primary
+      PATRONI_SCOPE: pg-ha-cluster
+      PATRONI_ETCD3_HOSTS: etcd-poc01:2379,etcd-poc02:2379,etcd-poc05:2379
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-primary:5432
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-primary:8008
+      PATRONI_SUPERUSER_USERNAME: postgres
+      PATRONI_SUPERUSER_PASSWORD: postgres
+      PATRONI_REPLICATION_USERNAME: replicator
+      PATRONI_REPLICATION_PASSWORD: replicator_pass
+      PATRONI_REWIND_PASSWORD: rewind_pass
+      PG_ROLE: primary
+    ports:
+      - "5432:5432"
+    depends_on:
+      etcd-poc01:
+        condition: service_healthy
+      etcd-poc02:
+        condition: service_healthy
+      etcd-poc05:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8008/primary || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  pg-replica:
+    build: ./docker/patroni
+    image: pg-patroni:16
+    container_name: pg-replica
+    restart: unless-stopped
+    volumes:
+      - poc03_data:/var/lib/postgresql/data
+    user: root
+    entrypoint: >
+      bash -c "chmod 700 /var/lib/postgresql/data &&
+               chown -R postgres:postgres /var/lib/postgresql/data &&
+               exec gosu postgres /entrypoint.sh"
+    environment:
+      PATRONI_NAME: pg-replica
+      PATRONI_SCOPE: pg-ha-cluster
+      PATRONI_ETCD3_HOSTS: etcd-poc01:2379,etcd-poc02:2379,etcd-poc05:2379
+      PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
+      PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-replica:5432
+      PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
+      PATRONI_RESTAPI_CONNECT_ADDRESS: pg-replica:8008
+      PATRONI_SUPERUSER_USERNAME: postgres
+      PATRONI_SUPERUSER_PASSWORD: postgres
+      PATRONI_REPLICATION_USERNAME: replicator
+      PATRONI_REPLICATION_PASSWORD: replicator_pass
+      PATRONI_REWIND_PASSWORD: rewind_pass
+      PG_ROLE: read_replica
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8008/replica || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # =====================
+  # PGBOUNCER
+  # =====================
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_HOST: pg-primary
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 20
+    ports:
+      - "6432:5432"
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+
+  # =====================
+  # HAPROXY
+  # =====================
+
+  haproxy:
+    image: haproxy:latest
+    container_name: haproxy
+    restart: unless-stopped
+    volumes:
+      - ./config/haproxy/haproxy-prd.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "6433:6433"
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+
+  # =====================
+  # MONITORING
+  # =====================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  poc01_data:
+  poc03_data:
+  poc05_etcd:
