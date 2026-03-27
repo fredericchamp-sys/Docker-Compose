@@ -1,0 +1,190 @@
+version: "3.9"
+
+services:
+
+  ##########################
+  # DC-A Brokers
+  ##########################
+  kafka-a-1:
+    image: apache/kafka:latest
+    container_name: kafka-a-1
+    hostname: kafka-a-1
+    ports:
+      - "19092:9092"   # host -> container for producing/consuming from Windows
+      - "19093:19093"  # controller port
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092,CONTROLLER://kafka-a-1:19093
+      KAFKA_KRAFT_CLUSTER_ID: "A-CLUSTER-001"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  kafka-a-2:
+    image: apache/kafka:latest
+    container_name: kafka-a-2
+    hostname: kafka-a-2
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-a-2:9092
+      KAFKA_KRAFT_CLUSTER_ID: "A-CLUSTER-001"
+
+  kafka-a-3:
+    image: apache/kafka:latest
+    container_name: kafka-a-3
+    hostname: kafka-a-3
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-a-3:9092
+      KAFKA_KRAFT_CLUSTER_ID: "A-CLUSTER-001"
+
+  ##########################
+  # DC-B Brokers
+  ##########################
+  kafka-b-1:
+    image: apache/kafka:latest
+    container_name: kafka-b-1
+    hostname: kafka-b-1
+    ports:
+      - "29092:9092"
+      - "29093:19093"
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-b-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:29092,CONTROLLER://kafka-b-1:19093
+      KAFKA_KRAFT_CLUSTER_ID: "B-CLUSTER-002"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  kafka-b-2:
+    image: apache/kafka:latest
+    container_name: kafka-b-2
+    hostname: kafka-b-2
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-b-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-b-2:9092
+      KAFKA_KRAFT_CLUSTER_ID: "B-CLUSTER-002"
+
+  kafka-b-3:
+    image: apache/kafka:latest
+    container_name: kafka-b-3
+    hostname: kafka-b-3
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-b-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-b-3:9092
+      KAFKA_KRAFT_CLUSTER_ID: "B-CLUSTER-002"
+
+  ##########################
+  # DC-C Brokers
+  ##########################
+  kafka-c-1:
+    image: apache/kafka:latest
+    container_name: kafka-c-1
+    hostname: kafka-c-1
+    ports:
+      - "39092:9092"
+      - "39093:19093"
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-c-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:39092,CONTROLLER://kafka-c-1:19093
+      KAFKA_KRAFT_CLUSTER_ID: "C-CLUSTER-003"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  kafka-c-2:
+    image: apache/kafka:latest
+    container_name: kafka-c-2
+    hostname: kafka-c-2
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-c-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-c-2:9092
+      KAFKA_KRAFT_CLUSTER_ID: "C-CLUSTER-003"
+
+  kafka-c-3:
+    image: apache/kafka:latest
+    container_name: kafka-c-3
+    hostname: kafka-c-3
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-c-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-c-3:9092
+      KAFKA_KRAFT_CLUSTER_ID: "C-CLUSTER-003"
+
+  ##########################
+  # MirrorMaker 2 A->B (Confluent)
+  ##########################
+  mm2-a-b:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: mm2-a-b
+    depends_on:
+      - kafka-a-1
+      - kafka-b-1
+    volumes:
+      - ./mm2/a-b:/config
+    command:
+      - bash
+      - -c
+      - |
+        /usr/bin/kafka-mirror-maker \
+        --consumer.config /config/consumer.properties \
+        --producer.config /config/producer.properties \
+        --whitelist '.*'
+
+  ##########################
+  # MirrorMaker 2 B->C (Confluent)
+  ##########################
+  mm2-b-c:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: mm2-b-c
+    depends_on:
+      - kafka-b-1
+      - kafka-c-1
+    volumes:
+      - ./mm2/b-c:/config
+    command:
+      - bash
+      - -c
+      - |
+        /usr/bin/kafka-mirror-maker \
+        --consumer.config /config/consumer.properties \
+        --producer.config /config/producer.properties \
+        --whitelist '.*'

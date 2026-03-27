@@ -1,0 +1,134 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# oacs-db-inclusive example
+#
+# Runs:
+#   - openacs (includes nsd + OpenACS code)
+#   - postgres (local db)
+#
+# Works without any environment variables.
+#
+# Stack-level parameters (optional):
+#   TZ                 default: Europe/Vienna
+#   hostname           default: localhost      (OpenACS hostname)
+#
+#   ipaddress          default: 127.0.0.1      (host bind for IPv4)
+#   ipv6address        default: ::1            (host bind for IPv6)
+#   httpport           default: (empty)        (random host port -> container 8080)
+#   httpsport          default: (empty)        (random host port -> container 8443)
+#
+#   nsdconfig          default: /usr/local/ns/conf/openacs-config.tcl
+#
+#   db_name            default: oacs-5-10
+#   db_user            default: openacs
+#   db_host            default: postgres
+#   db_port            default: 5432
+#
+#   system_pkgs         default: imagemagick poppler-utils  (load these as extra apt packages at startup)
+#
+# Tailoring:
+#   - To use a host secrets directory: replace oacs_secrets volume with ./secrets:/run/secrets:ro
+#   - To use custom OpenACS config: bind-mount openacs-config.tcl to /usr/local/ns/conf/openacs-config.tcl
+#   - For IPv6 bindings: use docker-compose.ipv6.yml override
+#
+
+x-default-env: &default-env
+  TZ: Europe/Vienna
+
+x-db-env: &db-env
+  oacs_db_name: ${db_name:-oacs-5-10}
+  oacs_db_user: ${db_user:-openacs}
+  oacs_db_host: ${db_host:-postgres}
+  oacs_db_port: ${db_port:-5432}
+  oacs_db_passwordfile: /run/secrets/psql_password
+
+services:
+  openacs:
+    image: gustafn/openacs:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if . /scripts/container-setup-openacs.sh; then
+          exec /usr/local/ns/bin/nsd -i -t ${nsdconfig:-/usr/local/ns/conf/openacs-config.tcl} -u nsadmin -g nsadmin
+        else
+          rc=$$?
+          echo "ERROR: container setup failed with status $$rc" >&2
+          sleep infinity
+        fi
+
+    volumes:
+      # The following volumes can be named (default) or host paths.
+      # If it is a host path: must exist/ be writable.
+      - ${hostroot:-oacs_data}:/var/www/openacs
+      - ${secretsdir:-oacs_secrets}:/run/secrets
+      - ${certificatesdir:-oacs_certificates}:/var/lib/naviserver/certificates
+      - ${logdir:-oacs_log}:/var/www/openacs/log
+
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    ports:
+      # Provide IP address and ports for your application if needed.
+      # By default, the local IP address and an ephemeral port are used.
+      - ${ipaddress:-127.0.0.1}:${httpport:-}:8080
+      - ${ipaddress:-127.0.0.1}:${httpsport:-}:8443
+      # Examples for using (additionally) IPv6 addresses for HTTP and HTTPS
+      #- ${ipv6address:-::1}:${httpport:-}:8080
+      #- ${ipv6address:-::1}:${httpsport:-}:8443
+
+    healthcheck:
+        test: ["CMD-SHELL", "curl -s -H \"Host: localhost\" -f http://localhost:8080/SYSTEM/success.tcl || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+
+    environment:
+      <<:
+        - *default-env
+        - *db-env
+      LD_PRELOAD: ${LD_PRELOAD:-}
+      oacs_httpport: 8080
+      oacs_httpsport: 8443
+      oacs_ipaddress: "::"
+      oacs_loopbackport: ${internal_loopbackport:-8888}
+      oacs_hostname: ${hostname:-localhost}
+      oacs_serverroot: /var/www/openacs
+      oacs_certificate: ""      # computed via container setup script
+      oacs_logdir: /var/www/openacs/log
+      oacs_tag: ${oacs_tag:-oacs-5-10}
+      oacs_clusterSecret: ${clusterSecret:-}
+      oacs_parameterSecret: ${parameterSecret:-}
+      system_pkgs: ${system_pkgs:-imagemagick poppler-utils}
+
+  postgres:
+    image: postgres:18
+    hostname: postgres
+    restart: unless-stopped
+    #user: postgres
+
+    environment:
+      <<: *default-env
+      POSTGRES_PASSWORD_FILE: /run/secrets/psql_password
+      POSTGRES_USER: ${db_user:-openacs}
+      POSTGRES_DB: ${db_name:-oacs-5-10}
+
+    volumes:
+      - db_data:/var/lib/postgresql
+      - ${secretsdir:-oacs_secrets}:/run/secrets
+      - ${certificatesdir:-oacs_certificates}:/var/lib/naviserver/certificates
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${db_user:-openacs} --dbname ${db_name:-oacs-5-10}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db_data:
+  oacs_data:
+  oacs_log:
+  oacs_secrets:
+  oacs_certificates:

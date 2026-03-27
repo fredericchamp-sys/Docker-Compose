@@ -1,0 +1,11 @@
+services:
+  WebSwing:
+    image: webswing
+    restart: unless-stopped
+    environment:
+      - WEBSWING_OPTS=-c /opt/webswing/host/webswing.config -h 0.0.0.0 -j /opt/webswing/jetty.properties -serveradmin -pfa /opt/webswing/host/webswing-admin.properties -adminctx /admin -aw admin/webswing-admin-server.war
+      - WEBSWING_JAVA_OPTS=-Xms1G -Xmx1G -Djava.net.preferIPv4Stack=true -Dwebswing.propertiesFile=/opt/webswing/webswing.properties -Dwebswing.server.publicUrl=http://192.168.1.2 -Dwebswing.admin.url=/admin
+    volumes:
+      - D:/docker/webswing/data:/opt/webswing/host
+    ports:
+      - "8080:8080"

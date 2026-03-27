@@ -1,0 +1,9 @@
+services:
+  aws:
+    image: amazon/aws-cli:latest
+    container_name: aws-cli
+    volumes:
+      - C:/Users/ribfr/.aws:/root/.aws
+      - "D:/Docker/Amazon aws-cli:/work"
+    working_dir: /work
+    entrypoint: ["sh", "-c", "trap : TERM INT; sleep infinity & wait"]

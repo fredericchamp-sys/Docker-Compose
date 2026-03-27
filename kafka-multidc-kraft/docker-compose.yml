@@ -1,0 +1,141 @@
+version: "3.9"
+
+services:
+  ##########################
+  # DC-A (Controller + Broker)
+  ##########################
+  kafka-a-1:
+    image: apache/kafka:latest
+    container_name: kafka-a-1
+    hostname: kafka-a-1
+    ports:
+      - "19092:9092"
+      - "19093:19093"
+    volumes:      
+        - D:\Docker\kafka-multidc-kraft\volumes\kafka-a-1-data:/var/lib/kafka/data      
+        - D:\Docker\kafka-multidc-kraft\volumes\kafka-a-1-logs:/opt/kafka/logs    
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093,2@kafka-b-1:19093,3@kafka-c-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092,CONTROLLER://kafka-a-1:19093
+      KAFKA_KRAFT_CLUSTER_ID: "TEST-CLUSTER"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      
+  ##########################
+  # DC-B (Controller + Broker)
+  ##########################
+  kafka-b-1:
+    image: apache/kafka:latest
+    container_name: kafka-b-1
+    hostname: kafka-b-1
+    ports:
+      - "29092:9092"
+      - "29093:19093"
+    volumes:      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-b-1-data:/var/lib/kafka/data      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-b-1-logs:/opt/kafka/logs
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 2
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093,2@kafka-b-1:19093,3@kafka-c-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:29092,CONTROLLER://kafka-b-1:19093
+      KAFKA_KRAFT_CLUSTER_ID: "TEST-CLUSTER"
+
+  ##########################
+  # DC-C (Controller + Broker)
+  ##########################
+  kafka-c-1:
+    image: apache/kafka:latest
+    container_name: kafka-c-1
+    hostname: kafka-c-1
+    ports:
+      - "39092:9092"
+      - "39093:19093"
+    volumes:      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-c-1-data:/var/lib/kafka/data      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-c-1-logs:/opt/kafka/logs  
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 3
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093,2@kafka-b-1:19093,3@kafka-c-1:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:39092,CONTROLLER://kafka-c-1:19093
+      KAFKA_KRAFT_CLUSTER_ID: "TEST-CLUSTER"
+
+  ##########################
+  # Broker-only nodes
+  ##########################
+  kafka-a-2:
+    image: apache/kafka:latest
+    container_name: kafka-a-2
+    hostname: kafka-a-2
+    ports:
+      - "19094:9092"
+    volumes:      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-a-2-data:/var/lib/kafka/data      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-a-2-logs:/opt/kafka/logs 
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 4
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093,2@kafka-b-1:19093,3@kafka-c-1:19093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19094
+      KAFKA_KRAFT_CLUSTER_ID: "TEST-CLUSTER"
+
+  kafka-c-2:
+    image: apache/kafka:latest
+    container_name: kafka-c-2
+    hostname: kafka-c-2
+    ports:
+      - "39094:9092"
+    volumes:      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-c-2-data:/var/lib/kafka/data      
+      - D:\Docker\kafka-multidc-kraft\volumes\kafka-c-2-logs:/opt/kafka/logs
+    environment:
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 5
+      KAFKA_PROCESS_ROLES: broker
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-a-1:19093,2@kafka-b-1:19093,3@kafka-c-1:19093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:39094
+      KAFKA_KRAFT_CLUSTER_ID: "TEST-CLUSTER"
+
+
+networks:  
+    kafka-network:    
+        driver: bridge
+
+volumes:  
+    kafka-a-1-data:    
+        driver: local  
+    kafka-a-1-logs:    
+        driver: local 
+    kafka-b-1-data:    
+        driver: local  
+    kafka-b-1-logs:    
+        driver: local
+    kafka-c-1-data:    
+        driver: local  
+    kafka-c-1-logs:    
+        driver: local
+    kafka-a-2-data:    
+        driver: local  
+    kafka-a-2-logs:    
+        driver: local
+    kafka-c-2-data:    
+        driver: local  
+    kafka-c-2-logs:    
+        driver: local        

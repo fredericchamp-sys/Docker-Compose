@@ -1,0 +1,323 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# openacs-org example (production-style)
+#
+# Runs:
+#   - openacs-org   (NaviServer + OpenACS)
+#   - mail-relay    (Postfix outgoing relay for nssmtpd)
+#   - munin-node    (metrics collection, talks to OpenACS)
+#   - munin-master  (generates static HTML/graphs)
+#
+# Design principle:
+#   Host paths are mapped into a normalized internal layout.
+#   Inside the containers we always use:
+#       /var/www/openacs
+#
+# Storage backends:
+#   hostroot        default: oacs_data         -> /var/www/openacs
+#   secretsdir      default: oacs_secrets      -> /run/secrets
+#   logdir          default: oacs_log          -> /var/www/openacs/log
+#   certificatesdir default: oacs_certificates -> /var/lib/naviserver/certificates
+#
+# Certificates:
+#   - certificate is a relative filename under /var/www/openacs/certificates/
+#   - container-setup copies/creates certificates into /var/lib/naviserver/certificates/
+#   - if certificatesdir is set to a host path, certificates are externally managed
+#
+# Database:
+#   This example assumes an external PostgreSQL (either TCP or local UNIX socket).
+#   For local UNIX socket access, mount the socket file into /var/run/postgresql/.
+#
+# This example is intended for:
+#   - production or near-production deployments
+#   - testing multiple NaviServer / Tcl combinations against one OpenACS tree
+#   - running multiple parallel developer instances on the same host
+#
+# -------------------------------------------------------------------
+# Stack-level configuration variables (all optional unless stated)
+# -------------------------------------------------------------------
+#
+# General
+#   hostname            (required)
+#     Default: none
+#     DNS name of the OpenACS site (e.g. openacs.org)
+#
+#   TZ
+#     Default: Europe/Vienna
+#     Time zone inside containers
+#
+# Paths (host paths, must exist)
+#   hostroot            (required)
+#     OpenACS installation root on the host
+#
+#   logdir               (required)
+#     Directory for container logs and runtime state
+#
+#   nsdconfig
+#     Default: /usr/local/ns/conf/openacs-config.tcl
+#     Path to site-specific NaviServer configuration file
+#
+#   certificate
+#     Default: ${hostroot}/etc/certfile.pem
+#     TLS certificate file used by NaviServer and Postfix
+#
+# Networking
+#   ipaddress
+#     Default: 127.0.0.1
+#     IPv4 address to bind HTTP/HTTPS ports
+#
+#   ipv6address
+#     Default: ::1
+#     IPv6 address to bind HTTP/HTTPS ports
+#
+#   httpport
+#     Default: empty (Docker assigns ephemeral port)
+#     External HTTP port
+#
+#   httpsport
+#     Default: empty (Docker assigns ephemeral port)
+#     External HTTPS port
+#
+# Database
+#   db_user
+#     Default: openacs
+#
+#   db_host
+#     Default: localhost
+#
+#   db_port
+#     Default: 5432
+#     Non-standard port supported (used for Unix socket name)
+#
+# Memory / performance
+#   LD_PRELOAD
+#     Default: empty
+#     Can be used to preload libtcmalloc for reduced memory footprint
+#
+# Packages
+#   system_pkgs
+#     Default: imagemagick
+#     Extra system packages required by the application
+#
+# Secrets (files, host paths)
+#   ${hostroot}/etc/secrets/psql_password.txt
+#   ${hostroot}/etc/secrets/cluster_secret.txt
+#   ${hostroot}/etc/secrets/parameter_secret.txt
+#
+# -------------------------------------------------------------------
+
+x-default-env: &default-env
+  TZ: Europe/Vienna
+
+x-db-env: &db-env
+  oacs_db_name: ${hostname}
+  oacs_db_user: ${db_user:-openacs}
+  oacs_db_host: ${db_host:-localhost}
+  oacs_db_port: ${db_port:-5432}
+  oacs_db_passwordfile: /run/secrets/psql_password
+
+
+services:
+  # ------------------------------------------------------------------
+  #  openacs-org  (main NaviServer/OpenACS instance)
+  # ------------------------------------------------------------------
+  openacs-org:
+    image: gustafn/openacs:latest
+    hostname: ${hostname}
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if . /scripts/container-setup-openacs.sh; then
+          exec /usr/local/ns/bin/nsd -i -t ${nsdconfig:-/usr/local/ns/conf/openacs-config.tcl} -u nsadmin -g nsadmin
+        else
+          rc=$$?
+          echo "ERROR: container setup failed with status $$rc" >&2
+          sleep infinity
+        fi
+
+    networks:
+      - oacs-net
+
+    ports:
+      # Provide external IP address and ports, mapped from internal ones
+      # By default, the local IP address and ephemeral ports are used.
+      - ${ipaddress:-127.0.0.1}:${httpport:-}:8080
+      - ${ipaddress:-127.0.0.1}:${httpsport:-}:8443
+      # Optional IPv6 bindings (docker-compose syntax requires brackets)
+      - "[${ipv6address:-::1}]:${httpport:-}:8080"
+      - "[${ipv6address:-::1}]:${httpsport:-}:8443"
+
+    environment:
+      <<:
+        - *default-env
+        - *db-env
+      # Optional: UID/GID mapping (use these IDs from host inside the container)
+      HOST_USER: nsadmin
+      HOST_GROUP: nsadmin
+      LD_PRELOAD: ${LD_PRELOAD:-}
+
+      # 'certificate' is a relative name under /var/www/openacs/certificates/
+      certificate: ${certificate:-${hostname}.pem}
+      # 'nsdconfig' is a relative name under /var/www/openacs/etc/
+      nsdconfig: ${nsdconfig:-}
+
+      oacs_hostname: "openacs.org www.openacs.org www.openacs.net openacs.net www.openacs.com openacs.com openacs.wu.ac.at openacs.wu-wien.ac.at smtp.openacs.org"
+      oacs_server: ${hostname:-openacs}
+      oacs_serverprettyname: OpenACS.org
+      oacs_serverroot: /var/www/openacs
+      oacs_logdir: /var/www/openacs/log
+      oacs_certificate: ""   # computed via container setup script
+
+      # Internal container IP and ports, to be mapped to host values
+      oacs_httpport: 8080
+      oacs_httpsport: 8443
+      #oacs_ipaddress: "::"
+      oacs_ipaddress: "0.0.0.0"
+      oacs_loopbackport: ${internal_loopbackport:-8888}
+      oacs_smtprelay: plain://mail-relay:25
+
+      # Enable nssmtpd on internal port 2525
+      oacs_smtpdport: 2525
+
+      # OpenACS specific secrets
+      oacs_clusterSecret: ${cluster_secret:-}
+      oacs_parameterSecret: ${parameter_secret:-}
+
+      # extra packages
+      system_pkgs: ${system_pkgs:-imagemagick}
+
+    volumes:
+      # OpenACS server root: can be a named volume or a host directory
+      - ${hostroot:-oacs_data}:/var/www/openacs
+      # Munin HTML produced by munin-master into hostroot/www/munin-container,
+      # served by NaviServer from /var/www/openacs/www/munin (read-only)
+      - ${hostroot:-oacs_data}/www/munin-container:/var/www/openacs/www/munin:ro
+
+      # Secrets and persistent state
+      - ${secretsdir:-oacs_secrets}:/run/secrets
+      - ${logdir:-oacs_log}:/var/www/openacs/log
+      - ${certificatesdir:-oacs_certificates}:/var/lib/naviserver/certificates
+
+      # Docker control socket (provides info, how container can be reached)
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Access /etc/hosts for UID mapping (nsadmin)
+      - /etc/passwd:/host-etc/passwd:ro
+      - /etc/group:/host-etc/group:ro
+
+      # Optional PostgreSQL unix-domain socket mapping (external DB on host)
+      - /tmp/.s.PGSQL.${db_port:-5432}:/var/run/postgresql/.s.PGSQL.${db_port:-5432}
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -H \"Host: $hostname\" -f http://localhost:${internal_loopbackport:-8888}/SYSTEM/success.tcl || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------------------------
+  #  mail-relay  (Postfix outgoing mail relay)
+  # ------------------------------------------------------------------
+  mail-relay:
+    image: gustafn/mail-relay:latest
+    hostname: smtpd.${hostname}
+    restart: unless-stopped
+
+    # Only internal SMTP – do not publish on host; nssmtpd talks to this
+    #expose:
+    #  - "25"
+
+    environment:
+      <<: *default-env
+      # Use the managed certificate store (same as OpenACS uses)
+      POSTFIX_TLS_CERT_FILE: /var/lib/naviserver/certificates/${hostname}.pem
+      #POSTFIX_MYNETWORKS: 127.0.0.0/8 [::1]/128 172.16.0.0/12 172.27.0.0/16
+
+    volumes:
+      - ${logdir:-oacs_log}:/var/log
+      - ${certificatesdir:-oacs_certificates}:/var/lib/naviserver/certificates:ro
+
+    networks:
+      - oacs-net
+
+  # ------------------------------------------------------------------
+  #  munin-node  (NaviServer metrics)
+  # ------------------------------------------------------------------
+  munin-node:
+    image: gustafn/munin-node-openacs:latest
+    restart: unless-stopped
+    depends_on:
+      - openacs-org
+
+    networks:
+      - oacs-net
+
+    environment:
+      <<:
+        - *default-env
+        - *db-env
+      MUNIN_HOSTNAME: ${hostname}              # Munin node name (as seen by master)
+      MUNIN_ALLOW_CIDR: 172.30.0.0/16          # or your master’s subnet (oacs-net)
+      # Tell naviserver_* plugins how to reach OpenACS:
+      NS_SERVER_NAME: ${hostname}              # naviserver_openacs.org_*
+      NS_ADDRESS: openacs-org                  # Docker service name
+      NS_PORT: ${internal_loopbackport:-8888}  # HTTP port inside OpenACS container
+      NS_URL_PATH: /SYSTEM/munin.tcl?t=        # URL path to interface script
+
+    volumes:
+      - ${logdir}/munin-node:/var/log/munin
+      - ${logdir}/munin-node-run:/var/run/munin
+      # Place, where to install munin.tcl (must be writable)
+      - ${hostroot}/www/SYSTEM:/oacs-system:rw
+      # optional: for PostgreSQL plugins via unix socket
+      - /tmp/.s.PGSQL.${db_port:-5432}:/var/run/postgresql/.s.PGSQL.${db_port:-5432}
+      # optional: secrets (needed for PostgreSQL connections
+      - ${secretsdir:-oacs_secrets}:/run/secrets
+
+
+
+  # ----------------------------------------------------------------------
+  #  munin-master: generate static HTML/graphs for /munin/
+  # ----------------------------------------------------------------------
+  munin-master:
+    image: gustafn/munin-master:latest    # build from Dockerfile.alpine
+    restart: unless-stopped
+
+    environment:
+      <<: *default-env
+      # These three are enough for the basic case
+      MUNIN_HOSTNAME: ${hostname}
+      MUNIN_NODE_ADDRESS: munin-node # your munin-node-openacs container
+      MUNIN_HOST_USER: nsadmin       # or "munin" if that user exists on the host
+      MUNIN_RUN_DIR: /var/log/munin
+
+    volumes:
+      # RRD DB and Munin master state
+      - ${logdir}/munin-db:/var/lib/munin
+      # Munin logs
+      - ${logdir}/munin-master:/var/log/munin
+      # HTML output to be served by NaviServer as /munin/
+      - ${hostroot:-oacs_data}/www/munin-container:/var/www/munin
+      - /etc/passwd:/host-etc/passwd:ro    # for UID mapping
+
+    # No ports exposed – this container only generates files.
+    networks:
+      - oacs-net
+
+volumes:
+   oacs_data:
+   oacs_log:
+   oacs_secrets:
+   oacs_certificates:
+
+networks:
+  oacs-net:
+    name: oacs-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

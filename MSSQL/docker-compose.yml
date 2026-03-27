@@ -1,0 +1,35 @@
+version: "3.9"
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver
+    restart: unless-stopped
+    environment:
+      - SA_PASSWORD=YourStrong!Passw0rd 
+      - ACCEPT_EULA=Y
+      - ACCEPT_EULA=Y
+      - MSSQL_DATA_DIR=/var/opt/mssql/data
+      - MSSQL_LOG_DIR=/var/opt/mssql/log
+      - MSSQL_BACKUP_DIR=/var/opt/mssql/backup
+    ports:
+      - "1433:1433" 
+    volumes:
+      - mssql_system:/var/opt/mssql
+      - d:/docker/mssql/data:/var/opt/mssql/data
+      - d:/docker/mssql/log:/var/opt/mssql/log
+      - d:/docker/mssql/backup:/var/opt/mssql/backup
+      - D:\Docker\Amazon aws-cli:/home/amazon_data
+    privileged: true
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrong!Passw0rd" -No -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  mssql_system:
+    driver: local
