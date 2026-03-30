@@ -76,6 +76,7 @@ bootstrap:
   pg_hba:
     - host replication ${PATRONI_REPLICATION_USERNAME:-replicator} 0.0.0.0/0 scram-sha-256
     - host all all 0.0.0.0/0 scram-sha-256
+  post_init: /etc/patroni/post_init.sh
   users:
     ${PATRONI_REPLICATION_USERNAME:-replicator}:
       password: "${PATRONI_REPLICATION_PASSWORD:-replicator_pass}"
@@ -113,6 +114,30 @@ tags:
 EOF
 
 echo "==> patroni.yml written"
+
+
+# Write post_init script - runs once on primary after cluster bootstrap
+# Installs pgcrypto in postgres db and any extra dbs listed in PGCRYPTO_DATABASES
+cat > /etc/patroni/post_init.sh <<'POSTINIT'
+#!/bin/bash
+set -e
+echo "==> post_init: installing pgcrypto..."
+ 
+# Always install in the default postgres database
+psql -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+ 
+# Install in any extra databases (space-separated env var)
+for db in ${PGCRYPTO_DATABASES:-}; do
+  echo "==> post_init: installing pgcrypto in database: ${db}"
+  psql -U postgres -d "${db}" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" || \
+    echo "WARN: could not install pgcrypto in ${db} (db may not exist yet)"
+done
+ 
+echo "==> post_init: pgcrypto done"
+POSTINIT
+ 
+chmod +x /etc/patroni/post_init.sh
+ 
 
 echo "==> Waiting for ETCD..."
 ETCD_HOST=$(echo "${PATRONI_ETCD3_HOSTS:-etcd-poc01:2379}" | cut -d',' -f1 | cut -d':' -f1)
