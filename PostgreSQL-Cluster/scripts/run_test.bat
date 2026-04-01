@@ -1,0 +1,1 @@
+docker exec -i pg-primary psql -U postgres -d postgres < %1

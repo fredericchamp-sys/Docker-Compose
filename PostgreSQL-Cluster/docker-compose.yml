@@ -221,7 +221,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ${DATA_DIR}/data/prometheus:/prometheus   # ✅ persistent data
+      - ${DATA_DIR}/prometheus:/prometheus   # ✅ persistent data
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
