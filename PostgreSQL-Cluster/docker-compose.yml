@@ -10,7 +10,7 @@ services:
     container_name: etcd-poc01
     restart: unless-stopped
     volumes:
-      - C:/Docker/postgreSQL/data/etcd01:/etcd-data   # ✅ persistent
+      - ${DATA_DIR}/etcd01:/etcd-data   # ✅ persistent
     environment:
       ETCD_NAME: etcd-poc01
       ETCDCTL_API: 3
@@ -21,6 +21,7 @@ services:
       ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-poc01:2380
       ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
       ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-cluster
     ports:
       - "2379:2379"
     healthcheck:
@@ -34,7 +35,7 @@ services:
     container_name: etcd-poc02
     restart: unless-stopped
     volumes:
-      - C:/Docker/postgreSQL/data/etcd02:/etcd-data   # ✅ persistent
+      - ${DATA_DIR}/etcd02:/etcd-data   # ✅ persistent
     environment:
       ETCD_NAME: etcd-poc02
       ETCDCTL_API: 3
@@ -45,6 +46,7 @@ services:
       ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-poc02:2380
       ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
       ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-cluster
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 10s
@@ -56,7 +58,7 @@ services:
     container_name: etcd-poc05
     restart: unless-stopped
     volumes:
-      - C:/Docker/postgreSQL/data/etcd05:/etcd-data   # ✅ persistent
+      - ${DATA_DIR}/etcd05:/etcd-data   # ✅ persistent
     environment:
       ETCD_NAME: etcd-poc05
       ETCDCTL_API: 3
@@ -67,6 +69,7 @@ services:
       ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd-poc05:2380
       ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
       ETCD_INITIAL_CLUSTER_STATE: new
+      ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-cluster
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 10s
@@ -206,7 +209,7 @@ services:
     environment:
       DATA_SOURCE_NAME: "postgresql://${PG_SUPERUSER_USER:-postgres}:${PG_SUPERUSER_PASSWORD:-postgres}@pg-primary:5432/postgres?sslmode=disable"
     volumes:
-      - C:/Docker/postgreSQL/data/exporter:/etc/postgres_exporter
+      - ${DATA_DIR}/exporter:/etc/postgres_exporter
     ports:
       - "9187:9187"
     depends_on:
@@ -218,7 +221,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - C:/Docker/postgreSQL/data/prometheus:/prometheus   # ✅ persistent data
+      - ${DATA_DIR}/data/prometheus:/prometheus   # ✅ persistent data
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -232,7 +235,9 @@ services:
     container_name: grafana
     restart: unless-stopped
     volumes:
-      - C:/Docker/postgreSQL/data/grafana:/var/lib/grafana   # ✅ persistent data
+      - ${DATA_DIR}/grafana:/var/lib/grafana   # ✅ persistent data
+      - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
@@ -245,4 +250,3 @@ services:
 volumes:
   poc01_data:
   poc03_data:
-  poc05_etcd:

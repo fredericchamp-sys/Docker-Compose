@@ -52,7 +52,7 @@ RUN mkdir -p \
 
 # Copy entrypoint
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Ports
 # 5432  – PostgreSQL
