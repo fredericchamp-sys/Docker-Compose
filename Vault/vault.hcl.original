@@ -26,7 +26,9 @@ listener "tcp" {
   address            = "0.0.0.0:8200"
   cluster_address    = "0.0.0.0:8201"
 
-  tls_disable = 1
+  tls_cert_file      = "/vault/tls/vault.crt"
+  tls_key_file       = "/vault/tls/vault.key"
+  tls_min_version    = "tls13"
 
   # Disable TLS only for health check path
   tls_disable_client_certs = true

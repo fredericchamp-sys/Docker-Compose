@@ -15,4 +15,4 @@ RUN chmod 700 /vault/data /vault/logs /vault/tls
 EXPOSE 8200 8201
 
 ENTRYPOINT ["vault"]
-CMD ["server", "-config=vault.hcl"]
+CMD ["server", "-config=/vault/config/vault.hcl"]
