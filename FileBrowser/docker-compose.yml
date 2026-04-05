@@ -1,0 +1,13 @@
+name: shared
+
+services:
+  filebrowser:
+    image: filebrowser/filebrowser
+    container_name: filebrowser
+    ports:
+      - "8080:80"
+    volumes:
+      - "${DATA_DIR}/data:/srv"
+      - "${DATA_DIR}/database.db:/database.db"
+      - "${DATA_DIR}/config.json:/config.json"
+    restart: unless-stopped
