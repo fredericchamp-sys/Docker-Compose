@@ -6,18 +6,18 @@ services:
     container_name: qbittorrent
 
     environment:
-      - PUID=1234
-      - PGID=65432
+      - PUID=1000
+      - PGID=1000
       - TZ=Europe/Paris
-      - WEBUI_PORT=8090
+      - WEBUI_PORT=8066
       - TORRENTING_PORT=9854
 
     volumes:
       - C:\docker\qbittorrent\config:/config
-      - C:\docker\qbittorrent\torrents:/data/torrents
+      - C:\docker\qbittorrent\torrents:/downloads
 
     ports:
-      - "8090:8090"
+      - "8066:8066"
       - "9854:9854/tcp"
       - "9854:9854/udp"
 
