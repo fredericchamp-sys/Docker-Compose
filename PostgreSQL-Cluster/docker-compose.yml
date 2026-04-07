@@ -24,6 +24,8 @@ services:
       ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-cluster
     ports:
       - "2379:2379"
+    networks:
+      - pg-network
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 10s
@@ -47,6 +49,8 @@ services:
       ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
       ETCD_INITIAL_CLUSTER_STATE: new
       ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-cluster
+    networks:
+      - pg-network
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 10s
@@ -70,6 +74,8 @@ services:
       ETCD_INITIAL_CLUSTER: etcd-poc01=http://etcd-poc01:2380,etcd-poc02=http://etcd-poc02:2380,etcd-poc05=http://etcd-poc05:2380
       ETCD_INITIAL_CLUSTER_STATE: new
       ETCD_INITIAL_CLUSTER_TOKEN: pg-etcd-cluster
+    networks:
+      - pg-network
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 10s
@@ -98,6 +104,11 @@ services:
       PATRONI_ETCD3_HOSTS: etcd-poc01:2379,etcd-poc02:2379,etcd-poc05:2379
       PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
       PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-primary:5432
+      PATRONI_POSTGRESQL_PARAMETERS: |
+        archive_mode=on
+        archive_command='pgbackrest --stanza=prod archive-push %p'
+        wal_level=replica
+        max_wal_senders=10
       PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
       PATRONI_RESTAPI_CONNECT_ADDRESS: pg-primary:8008
       PATRONI_SUPERUSER_USERNAME: ${PG_SUPERUSER_USER:-postgres}
@@ -109,6 +120,8 @@ services:
     ports:
       - "5432:5432"
       - "8008:8008"
+    networks:
+      - pg-network
     depends_on:
       etcd-poc01:
         condition: service_healthy
@@ -141,6 +154,11 @@ services:
       PATRONI_ETCD3_HOSTS: etcd-poc01:2379,etcd-poc02:2379,etcd-poc05:2379
       PATRONI_POSTGRESQL_LISTEN: 0.0.0.0:5432
       PATRONI_POSTGRESQL_CONNECT_ADDRESS: pg-replica:5432
+      PATRONI_POSTGRESQL_PARAMETERS: |
+        archive_mode=on
+        archive_command='pgbackrest --stanza=prod archive-push %p'
+        wal_level=replica
+        max_wal_senders=10
       PATRONI_RESTAPI_LISTEN: 0.0.0.0:8008
       PATRONI_RESTAPI_CONNECT_ADDRESS: pg-replica:8008
       PATRONI_SUPERUSER_USERNAME: ${PG_SUPERUSER_USER:-postgres}
@@ -151,6 +169,8 @@ services:
       PG_ROLE: read_replica
     ports:
       - "8009:8008"
+    networks:
+      - pg-network
     depends_on:
       pg-primary:
         condition: service_healthy
@@ -170,8 +190,8 @@ services:
     container_name: pgbouncer
     restart: unless-stopped
     environment:
-      DB_HOST: pg-primary
-      DB_PORT: 5432
+      DB_HOST: haproxy   
+      DB_PORT: 6433
       DB_USER: ${PG_SUPERUSER_USER:-postgres}
       DB_PASSWORD: ${PG_SUPERUSER_PASSWORD:-postgres}
       POOL_MODE: transaction
@@ -179,6 +199,8 @@ services:
       DEFAULT_POOL_SIZE: 20
     ports:
       - "6432:5432"
+    networks:
+      - pg-network
     depends_on:
       pg-primary:
         condition: service_healthy
@@ -195,6 +217,8 @@ services:
       - ./config/haproxy/haproxy-prd.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     ports:
       - "6433:6433"
+    networks:
+      - pg-network
     depends_on:
       pg-primary:
         condition: service_healthy
@@ -207,11 +231,13 @@ services:
     image: quay.io/prometheuscommunity/postgres-exporter
     container_name: postgres-exporter
     environment:
-      DATA_SOURCE_NAME: "postgresql://${PG_SUPERUSER_USER:-postgres}:${PG_SUPERUSER_PASSWORD:-postgres}@pg-primary:5432/postgres?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${PG_SUPERUSER_USER}:${PG_SUPERUSER_PASSWORD}@haproxy:6433/postgres?sslmode=disable"
     volumes:
       - ${DATA_DIR}/exporter:/etc/postgres_exporter
     ports:
       - "9187:9187"
+    networks:
+      - pg-network
     depends_on:
       - pg-primary
 
@@ -229,6 +255,8 @@ services:
       - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
+    networks:
+      - pg-network
 
   grafana:
     image: grafana/grafana:latest
@@ -244,9 +272,35 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
       - "3000:3000"
+    networks:
+      - pg-network
     depends_on:
       - prometheus
+
+pgbackrest:
+    image: ghcr.io/pgbackrest/pgbackrest:latest
+    container_name: pgbackrest
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR}/pgbackrest:/var/lib/pgbackrest
+      - ${DATA_DIR}/wal-archive:/var/lib/wal
+    environment:
+      PGBACKREST_REPO1_TYPE: s3
+      PGBACKREST_REPO1_S3_BUCKET: ${S3_BUCKET}
+      PGBACKREST_REPO1_S3_REGION: ${AWS_REGION}
+      PGBACKREST_REPO1_S3_ENDPOINT: s3.amazonaws.com
+      PGBACKREST_REPO1_S3_KEY: ${AWS_ACCESS_KEY_ID}
+      PGBACKREST_REPO1_S3_KEY_SECRET: ${AWS_SECRET_ACCESS_KEY}
+      PGBACKREST_STANZA: prod
+    depends_on:
+      - pg-primary
+    networks:
+      - pg-network
 
 volumes:
   poc01_data:
   poc03_data:
+
+networks:
+  pg-network:
+    driver: bridge
