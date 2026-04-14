@@ -1,0 +1,300 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────
+# Production MongoDB Sharded Cluster
+#
+# Topology:
+#   - 3 Config Server replica set  (configReplSet)
+#   - 2 Shards, each a 3-node replica set
+#       shard1  (shard1a / shard1b / shard1c)
+#       shard2  (shard2a / shard2b / shard2c)
+#   - 1 mongos router
+#   - 1 mongo-init  (runs once, exits — idempotent)
+#
+# Usage:
+#   Place init-cluster.sh next to this file, then:
+#   docker compose up -d
+#
+#   The mongo-init service will automatically initialise the
+#   replica sets and register shards on first boot.
+#   On subsequent boots it detects existing state and skips safely.
+# ─────────────────────────────────────────────
+
+x-mongo-common: &mongo-common
+  image: mongo:8
+  restart: unless-stopped
+  ulimits:
+    nproc: 64000
+    nofile:
+      soft: 64000
+      hard: 64000
+
+x-healthcheck-configsvr: &healthcheck-configsvr
+  test: ["CMD", "mongosh", "--port", "27019", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+x-healthcheck-shardsvr: &healthcheck-shardsvr
+  test: ["CMD", "mongosh", "--port", "27018", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+x-healthcheck-mongos: &healthcheck-mongos
+  test: ["CMD", "mongosh", "--port", "27017", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 40s
+
+services:
+
+  # ── CONFIG SERVERS ──────────────────────────
+  config1:
+    <<: *mongo-common
+    container_name: config1
+    command: >
+      mongod
+        --configsvr
+        --replSet configReplSet
+        --port 27019
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 0.5
+    volumes:
+      - d:/docker/mongoDB/config1/db:/data/db
+      - d:/docker/mongoDB/config1/configdb:/data/configdb
+    ports:
+      - "27119:27019"
+    healthcheck: *healthcheck-configsvr
+
+  config2:
+    <<: *mongo-common
+    container_name: config2
+    command: >
+      mongod
+        --configsvr
+        --replSet configReplSet
+        --port 27019
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 0.5
+    volumes:
+      - d:/docker/mongoDB/config2/db:/data/db
+      - d:/docker/mongoDB/config2/configdb:/data/configdb
+    healthcheck: *healthcheck-configsvr
+
+  config3:
+    <<: *mongo-common
+    container_name: config3
+    command: >
+      mongod
+        --configsvr
+        --replSet configReplSet
+        --port 27019
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 0.5
+    volumes:
+      - d:/docker/mongoDB/config3/db:/data/db
+      - d:/docker/mongoDB/config3/configdb:/data/configdb
+    healthcheck: *healthcheck-configsvr
+
+  # ── SHARD 1 (3-node replica set) ────────────
+  shard1a:
+    <<: *mongo-common
+    container_name: shard1a
+    command: >
+      mongod
+        --shardsvr
+        --replSet shard1
+        --port 27018
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 1
+    volumes:
+      - d:/docker/mongoDB/shard1a:/data/db
+    healthcheck: *healthcheck-shardsvr
+
+  shard1b:
+    <<: *mongo-common
+    container_name: shard1b
+    command: >
+      mongod
+        --shardsvr
+        --replSet shard1
+        --port 27018
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 1
+    volumes:
+      - d:/docker/mongoDB/shard1b:/data/db
+    healthcheck: *healthcheck-shardsvr
+
+  shard1c:
+    <<: *mongo-common
+    container_name: shard1c
+    command: >
+      mongod
+        --shardsvr
+        --replSet shard1
+        --port 27018
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 1
+    volumes:
+      - d:/docker/mongoDB/shard1c:/data/db
+    healthcheck: *healthcheck-shardsvr
+
+  # ── SHARD 2 (3-node replica set) ────────────
+  # A second shard gives you horizontal write scalability
+  # and means losing shard1 entirely does not take down the cluster.
+  shard2a:
+    <<: *mongo-common
+    container_name: shard2a
+    command: >
+      mongod
+        --shardsvr
+        --replSet shard2
+        --port 27018
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 1
+    volumes:
+      - d:/docker/mongoDB/shard2a:/data/db
+    healthcheck: *healthcheck-shardsvr
+
+  shard2b:
+    <<: *mongo-common
+    container_name: shard2b
+    command: >
+      mongod
+        --shardsvr
+        --replSet shard2
+        --port 27018
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 1
+    volumes:
+      - d:/docker/mongoDB/shard2b:/data/db
+    healthcheck: *healthcheck-shardsvr
+
+  shard2c:
+    <<: *mongo-common
+    container_name: shard2c
+    command: >
+      mongod
+        --shardsvr
+        --replSet shard2
+        --port 27018
+        --bind_ip_all
+        --wiredTigerCacheSizeGB 1
+    volumes:
+      - d:/docker/mongoDB/shard2c:/data/db
+    healthcheck: *healthcheck-shardsvr
+
+  # ── CONFIG REPLICA SET INIT ──────────────────
+  # Runs before mongos starts. Initiates configReplSet and
+  # waits until a primary is elected before exiting.
+  # Idempotent: safe to re-run on every `docker compose up`.
+  config-init:
+    image: mongo:8
+    container_name: config-init
+    restart: "no"
+    depends_on:
+      config1:
+        condition: service_healthy
+      config2:
+        condition: service_healthy
+      config3:
+        condition: service_healthy
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        MONGOSH="mongosh --quiet --norc --host config1 --port 27019"
+        echo "[config-init] Checking configReplSet status..."
+        STATUS=$$( $$MONGOSH --eval "rs.status().ok" 2>/dev/null || echo "0" )
+        if [ "$$STATUS" = "1" ]; then
+          echo "[config-init] configReplSet already initialised — skipping."
+        else
+          echo "[config-init] Initiating configReplSet..."
+          $$MONGOSH --eval "
+            rs.initiate({
+              _id: 'configReplSet',
+              configsvr: true,
+              members: [
+                { _id: 0, host: 'config1:27019' },
+                { _id: 1, host: 'config2:27019' },
+                { _id: 2, host: 'config3:27019' }
+              ]
+            })
+          "
+        fi
+        echo "[config-init] Waiting for configReplSet primary..."
+        until $$MONGOSH --eval "rs.isMaster().ismaster" 2>/dev/null | grep -q true; do
+          sleep 2
+        done
+        echo "[config-init] configReplSet primary is ready."
+
+  # ── MONGOS ROUTER ────────────────────────────
+  mongos:
+    <<: *mongo-common
+    container_name: mongos
+    command: >
+      mongos
+        --configdb configReplSet/config1:27019,config2:27019,config3:27019
+        --port 27017
+        --bind_ip_all
+    ports:
+      - "27017:27017"
+    depends_on:
+      config-init:
+        condition: service_completed_successfully
+      shard1a:
+        condition: service_healthy
+      shard1b:
+        condition: service_healthy
+      shard1c:
+        condition: service_healthy
+      shard2a:
+        condition: service_healthy
+      shard2b:
+        condition: service_healthy
+      shard2c:
+        condition: service_healthy
+    healthcheck: *healthcheck-mongos
+
+  # ── SHARD + CLUSTER INITIALISER ─────────────
+  # Runs after mongos is healthy. Initiates shard replica sets
+  # and registers them with mongos. Idempotent.
+  #mongo-init:
+  #  image: mongo:8
+  #  container_name: mongo-init
+  #  restart: "no"
+  #  depends_on:
+  #    mongos:
+  #      condition: service_healthy
+  #  volumes:
+  #    - ./init-cluster.sh:/init-cluster.sh:ro
+  #  entrypoint: ["bash", "/init-cluster.sh"]
+
+# ── MONGODB EXPORTER ─────────────────────────
+  # Scrapes metrics from mongos and exposes them for Prometheus.
+  # Connects via mongos so it gets cluster-wide visibility.
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.43
+    container_name: mongodb-exporter
+    restart: unless-stopped
+    command:
+      - --mongodb.uri=mongodb://mongos:27017
+      - --mongodb.global-conn-pool
+      - --collect-all
+      - --compatible-mode
+    ports:
+      - "9216:9216"
+    networks:
+      - monitoring
+    depends_on:
+      mongos:
+        condition: service_healthy
+        
+networks:
+  monitoring:
+    external: true
