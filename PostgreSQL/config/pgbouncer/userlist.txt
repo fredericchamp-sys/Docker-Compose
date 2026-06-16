@@ -1,0 +1,4 @@
+# pgbouncer userlist – replace with scram-sha-256 hashes in production
+"postgres" "changeme_strong"
+"replicator" "changeme_repl"
+"pgbouncer" "pgbouncer"

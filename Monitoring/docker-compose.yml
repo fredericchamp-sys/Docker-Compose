@@ -1,0 +1,60 @@
+name: monitoring
+
+services:
+  # =====================
+  # MONITORING
+  # =====================
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${PG_SUPERUSER_USER}:${PG_SUPERUSER_PASSWORD}@haproxy:6433/postgres?sslmode=disable"
+    volumes:
+      - ${DATA_DIR_MONITORING}/exporter:/etc/postgres_exporter
+    ports:
+      - "9187:9187"
+    networks:
+      - monitoring-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${DATA_DIR_MONITORING}/prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR_MONITORING}/grafana:/var/lib/grafana
+      - ./config/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./config/grafana_provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    networks:
+      - monitoring-network
+    depends_on:
+      - prometheus
+
+networks:
+  monitoring-network:
+    driver: bridge
+    name: monitoring-network

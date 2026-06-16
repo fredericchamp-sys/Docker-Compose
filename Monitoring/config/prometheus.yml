@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+
+  # Patroni REST API — exposes Prometheus metrics at /metrics on port 8008.
+  # Both nodes are reachable because Prometheus shares pg-network with them.
+  - job_name: 'patroni'
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - 'pg-primary:8008'
+          - 'pg-replica:8008'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # postgres_exporter — standard metrics endpoint, no override needed.
+  - job_name: 'postgres_exporter'
+    static_configs:
+      - targets:
+          - 'postgres-exporter:9187'
+
+  # HAProxy — requires the Prometheus stats endpoint to be enabled in haproxy.cfg:
+  #   frontend stats
+  #     bind *:8404
+  #     http-request use-service prometheus-exporter if { path /metrics }
+  #     stats enable
+  # Port 8404 is the HAProxy-native Prometheus endpoint (no sidecar needed, HAProxy >= 2.0).
+  - job_name: 'haproxy'
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - 'haproxy:8404'

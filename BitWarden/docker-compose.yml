@@ -1,0 +1,14 @@
+services:
+  bitwarden:
+    image: ghcr.io/bitwarden/lite
+    container_name: bitwarden
+    restart: unless-stopped
+    env_file:
+    - settings.env
+    ports:
+    - "8080:8080"
+    volumes:
+    - D:\Docker\BitWarden:/etc/bitwarden
+    networks:
+    - shared
+    
