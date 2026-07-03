@@ -1,0 +1,39 @@
+name: floci
+
+services:
+  floci:
+    image: floci/floci:latest
+    container_name: floci
+    restart: unless-stopped
+
+    ports:
+      - "4566:4566"
+
+      # Optional internal services exposure
+      - "6379-6399:6379-6399"
+      - "7001-7099:7001-7099"
+      - "9200-9299:9200-9299"
+
+    volumes:
+      # Docker socket
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Persistent data
+      - C:/docker/floci/data:/app/data
+
+    environment:
+      FLOCI_SERVICES_DOCKER_NETWORK: floci_default
+      FLOCI_SERVICES_RDS_PROXY_BASE_PORT: "7001"
+
+      # IMPORTANT
+      FLOCI_HOSTNAME: localhost.floci.io
+      FLOCI_BASE_URL: http://localhost.floci.io:4566
+
+      FLOCI_SERVICES_LAMBDA_HOT_RELOAD_ENABLED: "true"
+
+    networks:
+      - floci_default
+
+networks:
+  floci_default:
+    driver: bridge
